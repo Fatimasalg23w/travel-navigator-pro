@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockTours, mockTour } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -26,44 +32,245 @@ import {
   Plane, 
   Clock, 
   DollarSign, 
-  Image, 
   Trash2, 
   Pencil,
   ChevronRight,
   ExternalLink
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Tour, TourDay } from '@/types';
+
+// Types
+interface Pricing {
+  adultPriceMXN: number;
+  childPriceMXN: number;
+}
+
+interface TourDay {
+  day: number;
+  activity: string;
+  link: string | null;
+  pickup: string;
+  dropOff: string;
+  departures: string;
+  totalTime: string;
+  startTime: string | null;
+  finishTime: string | null;
+  cancelationPolicy: string;
+  mealsIncluded: string | null;
+  provider: string | null;
+  pricing: Pricing;
+  description: string;
+  pictures: string[];
+}
+
+interface Airport {
+  name: string;
+  code: string;
+  transfersIncluded: string;
+}
+
+interface Tour {
+  _id?: string;
+  tourName: string;
+  year: number;
+  month: string;
+  arrivalDate: number;
+  departureDate: number;
+  airport: Airport;
+  days: TourDay[];
+  compania: string[];
+  destino: string[];
+  especial: string[];
+  plan: string[];
+}
 
 const AdminTours = () => {
-  const [tours, setTours] = useState<Tour[]>(mockTours);
+  const [tours, setTours] = useState<Tour[]>([]);
   const [selectedTour, setSelectedTour] = useState<Tour | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [isAddingDay, setIsAddingDay] = useState(false);
+  const [isAddingTour, setIsAddingTour] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const [newTour, setNewTour] = useState<Partial<Tour>>({
+    tourName: '',
+    year: new Date().getFullYear(),
+    month: '',
+    arrivalDate: 1,
+    departureDate: 1,
+    airport: {
+      name: '',
+      code: '',
+      transfersIncluded: 'Todos'
+    },
+    days: [],
+    compania: [],
+    destino: [],
+    especial: [],
+    plan: []
+  });
+
   const [newDay, setNewDay] = useState<Partial<TourDay>>({
     activity: '',
+    link: null,
     pickup: '',
     dropOff: '',
+    departures: 'Daily',
     totalTime: '',
-    description: '',
+    startTime: null,
+    finishTime: null,
+    cancelationPolicy: 'No returnable',
+    mealsIncluded: null,
+    provider: null,
     pricing: { adultPriceMXN: 0, childPriceMXN: 0 },
+    description: '',
     pictures: [],
   });
+
   const { toast } = useToast();
 
+  // Fetch tours from MongoDB
+  useEffect(() => {
+    fetchTours();
+  }, []);
+
+  const fetchTours = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/tours');
+      const data = await response.json();
+      setTours(data);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los tours",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateTour = async () => {
+    if (!newTour.tourName || !newTour.month) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor completa el nombre y mes del tour",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/tours', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTour)
+      });
+
+      if (response.ok) {
+        const createdTour = await response.json();
+        setTours([...tours, createdTour]);
+        toast({
+          title: "Tour creado",
+          description: "El tour ha sido creado exitosamente"
+        });
+        setIsAddingTour(false);
+        resetNewTour();
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo crear el tour",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateTour = async (tour: Tour) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/tours/${tour._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tour)
+      });
+
+      if (response.ok) {
+        const updatedTour = await response.json();
+        setTours(tours.map(t => t._id === tour._id ? updatedTour : t));
+        setSelectedTour(updatedTour);
+        toast({
+          title: "Tour actualizado",
+          description: "Los cambios han sido guardados"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el tour",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteTour = async (tourId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este tour?')) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/tours/${tourId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setTours(tours.filter(t => t._id !== tourId));
+        setSelectedTour(null);
+        toast({
+          title: "Tour eliminado",
+          description: "El tour ha sido eliminado"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el tour",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddDay = () => {
-    if (!selectedTour || !newDay.activity) return;
+    if (!selectedTour || !newDay.activity) {
+      toast({
+        title: "Campo requerido",
+        description: "La actividad es obligatoria",
+        variant: "destructive"
+      });
+      return;
+    }
 
     const day: TourDay = {
       day: selectedTour.days.length + 1,
       activity: newDay.activity || '',
+      link: newDay.link || null,
       pickup: newDay.pickup || '',
       dropOff: newDay.dropOff || '',
-      departures: 'Daily',
+      departures: newDay.departures || 'Daily',
       totalTime: newDay.totalTime || '',
-      cancelationPolicy: 'No returnable',
-      description: newDay.description || '',
+      startTime: newDay.startTime || null,
+      finishTime: newDay.finishTime || null,
+      cancelationPolicy: newDay.cancelationPolicy || 'No returnable',
+      mealsIncluded: newDay.mealsIncluded || null,
+      provider: newDay.provider || null,
       pricing: newDay.pricing || { adultPriceMXN: 0, childPriceMXN: 0 },
+      description: newDay.description || '',
       pictures: newDay.pictures || [],
     };
 
@@ -72,23 +279,9 @@ const AdminTours = () => {
       days: [...selectedTour.days, day],
     };
 
-    setTours(tours.map(t => t.id === selectedTour.id ? updatedTour : t));
-    setSelectedTour(updatedTour);
+    handleUpdateTour(updatedTour);
     setIsAddingDay(false);
-    setNewDay({
-      activity: '',
-      pickup: '',
-      dropOff: '',
-      totalTime: '',
-      description: '',
-      pricing: { adultPriceMXN: 0, childPriceMXN: 0 },
-      pictures: [],
-    });
-
-    toast({
-      title: "Día agregado",
-      description: `El día ${day.day} ha sido agregado al tour`,
-    });
+    resetNewDay();
   };
 
   const handleRemoveDay = (dayNumber: number) => {
@@ -103,14 +296,52 @@ const AdminTours = () => {
       days: updatedDays,
     };
 
-    setTours(tours.map(t => t.id === selectedTour.id ? updatedTour : t));
-    setSelectedTour(updatedTour);
+    handleUpdateTour(updatedTour);
+  };
 
-    toast({
-      title: "Día eliminado",
-      description: "El día ha sido eliminado del tour",
+  const resetNewDay = () => {
+    setNewDay({
+      activity: '',
+      link: null,
+      pickup: '',
+      dropOff: '',
+      departures: 'Daily',
+      totalTime: '',
+      startTime: null,
+      finishTime: null,
+      cancelationPolicy: 'No returnable',
+      mealsIncluded: null,
+      provider: null,
+      pricing: { adultPriceMXN: 0, childPriceMXN: 0 },
+      description: '',
+      pictures: [],
     });
   };
+
+  const resetNewTour = () => {
+    setNewTour({
+      tourName: '',
+      year: new Date().getFullYear(),
+      month: '',
+      arrivalDate: 1,
+      departureDate: 1,
+      airport: {
+        name: '',
+        code: '',
+        transfersIncluded: 'Todos'
+      },
+      days: [],
+      compania: [],
+      destino: [],
+      especial: [],
+      plan: []
+    });
+  };
+
+  const monthOptions = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   return (
     <DashboardLayout>
@@ -125,7 +356,7 @@ const AdminTours = () => {
               Administra los tours disponibles para tus clientes
             </p>
           </div>
-          <Button variant="warm">
+          <Button variant="warm" onClick={() => setIsAddingTour(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Nuevo Tour
           </Button>
@@ -136,39 +367,45 @@ const AdminTours = () => {
           {/* Tours List */}
           <div className="space-y-4">
             <h2 className="font-display text-lg font-semibold text-foreground">Tours Disponibles</h2>
-            {tours.map((tour) => (
-              <div
-                key={tour.id}
-                onClick={() => setSelectedTour(tour)}
-                className={`p-5 rounded-xl border cursor-pointer transition-all duration-300 ${
-                  selectedTour?.id === tour.id 
-                    ? 'bg-primary/5 border-primary shadow-warm' 
-                    : 'bg-card border-border hover:border-primary/50'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-12 h-12 rounded-xl gradient-warm flex items-center justify-center shadow-warm">
-                    <Map className="w-6 h-6 text-primary-foreground" />
+            {loading ? (
+              <div className="text-center py-8 text-muted-foreground">Cargando...</div>
+            ) : tours.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No hay tours disponibles</div>
+            ) : (
+              tours.map((tour) => (
+                <div
+                  key={tour._id}
+                  onClick={() => setSelectedTour(tour)}
+                  className={`p-5 rounded-xl border cursor-pointer transition-all duration-300 ${
+                    selectedTour?._id === tour._id 
+                      ? 'bg-primary/5 border-primary shadow-warm' 
+                      : 'bg-card border-border hover:border-primary/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-12 h-12 rounded-xl gradient-warm flex items-center justify-center shadow-warm">
+                      <Map className="w-6 h-6 text-primary-foreground" />
+                    </div>
+                    <ChevronRight className={`w-5 h-5 transition-transform ${
+                      selectedTour?._id === tour._id ? 'text-primary rotate-90' : 'text-muted-foreground'
+                    }`} />
                   </div>
-                  <ChevronRight className={`w-5 h-5 transition-transform ${
-                    selectedTour?.id === tour.id ? 'text-primary rotate-90' : 'text-muted-foreground'
-                  }`} />
+                  <h3 className="font-display text-lg font-semibold text-foreground mb-1">
+                    {tour.tourName}
+                  </h3>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4" />
+                      {tour.month} {tour.year}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      {tour.days.length} días
+                    </span>
+                  </div>
                 </div>
-                <h3 className="font-display text-lg font-semibold text-foreground mb-1">
-                  {tour.tourName}
-                </h3>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {tour.month} {tour.year}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    {tour.days.length} días
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {/* Tour Details */}
@@ -193,10 +430,12 @@ const AdminTours = () => {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="icon">
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="icon" className="text-destructive hover:text-destructive">
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => selectedTour._id && handleDeleteTour(selectedTour._id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -261,6 +500,12 @@ const AdminTours = () => {
                                   <p className="font-medium text-foreground">{day.mealsIncluded}</p>
                                 </div>
                               )}
+                              {day.provider && (
+                                <div>
+                                  <span className="text-muted-foreground">Proveedor:</span>
+                                  <p className="font-medium text-foreground">{day.provider}</p>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center justify-between pt-2">
@@ -294,13 +539,13 @@ const AdminTours = () => {
                             </div>
 
                             {day.pictures.length > 0 && (
-                              <div className="flex gap-2 pt-2">
+                              <div className="flex gap-2 pt-2 overflow-x-auto">
                                 {day.pictures.map((pic, idx) => (
                                   <img 
                                     key={idx}
                                     src={pic} 
                                     alt={`${day.activity} ${idx + 1}`}
-                                    className="w-20 h-20 rounded-lg object-cover"
+                                    className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
                                   />
                                 ))}
                               </div>
@@ -352,14 +597,14 @@ const AdminTours = () => {
 
         {/* Add Day Dialog */}
         <Dialog open={isAddingDay} onOpenChange={setIsAddingDay}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display text-xl">Agregar Nuevo Día</DialogTitle>
               <DialogDescription>
                 Agrega un nuevo día al itinerario del tour
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Actividad *</Label>
                 <Input
@@ -368,6 +613,16 @@ const AdminTours = () => {
                   onChange={(e) => setNewDay({ ...newDay, activity: e.target.value })}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label>Link (Opcional)</Label>
+                <Input
+                  placeholder="https://..."
+                  value={newDay.link || ''}
+                  onChange={(e) => setNewDay({ ...newDay, link: e.target.value || null })}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Recogida</Label>
@@ -386,14 +641,54 @@ const AdminTours = () => {
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Duración</Label>
+                  <Input
+                    placeholder="Ej: 8 hrs"
+                    value={newDay.totalTime}
+                    onChange={(e) => setNewDay({ ...newDay, totalTime: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Proveedor</Label>
+                  <Input
+                    placeholder="Ej: Viator"
+                    value={newDay.provider || ''}
+                    onChange={(e) => setNewDay({ ...newDay, provider: e.target.value || null })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Hora Inicio</Label>
+                  <Input
+                    type="time"
+                    value={newDay.startTime || ''}
+                    onChange={(e) => setNewDay({ ...newDay, startTime: e.target.value || null })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Hora Fin</Label>
+                  <Input
+                    type="time"
+                    value={newDay.finishTime || ''}
+                    onChange={(e) => setNewDay({ ...newDay, finishTime: e.target.value || null })}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label>Duración</Label>
+                <Label>Comidas Incluidas</Label>
                 <Input
-                  placeholder="Ej: 8 hrs"
-                  value={newDay.totalTime}
-                  onChange={(e) => setNewDay({ ...newDay, totalTime: e.target.value })}
+                  placeholder="Ej: Regional Mexican Food"
+                  value={newDay.mealsIncluded || ''}
+                  onChange={(e) => setNewDay({ ...newDay, mealsIncluded: e.target.value || null })}
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Precio Adulto (MXN)</Label>
@@ -424,6 +719,7 @@ const AdminTours = () => {
                   />
                 </div>
               </div>
+
               <div className="space-y-2">
                 <Label>Descripción</Label>
                 <Textarea
@@ -433,13 +729,176 @@ const AdminTours = () => {
                   rows={4}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label>URLs de Imágenes (una por línea)</Label>
+                <Textarea
+                  placeholder="https://ejemplo.com/imagen1.jpg"
+                  value={newDay.pictures?.join('\n') || ''}
+                  onChange={(e) => setNewDay({ 
+                    ...newDay, 
+                    pictures: e.target.value.split('\n').filter(url => url.trim()) 
+                  })}
+                  rows={3}
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAddingDay(false)}>
                 Cancelar
               </Button>
-              <Button variant="warm" onClick={handleAddDay}>
-                Agregar Día
+              <Button variant="warm" onClick={handleAddDay} disabled={loading}>
+                {loading ? 'Guardando...' : 'Agregar Día'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Tour Dialog */}
+        <Dialog open={isAddingTour} onOpenChange={setIsAddingTour}>
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="font-display text-2xl">Crear Nuevo Tour</DialogTitle>
+              <DialogDescription>
+                Completa la información básica del tour
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Nombre del Tour *</Label>
+                <Input
+                  placeholder="Ej: Merida PLUS"
+                  value={newTour.tourName}
+                  onChange={(e) => setNewTour({ ...newTour, tourName: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Mes *</Label>
+                  <Select 
+                    value={newTour.month} 
+                    onValueChange={(value) => setNewTour({ ...newTour, month: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona mes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {monthOptions.map(month => (
+                        <SelectItem key={month} value={month}>{month}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Año</Label>
+                  <Input
+                    type="number"
+                    value={newTour.year}
+                    onChange={(e) => setNewTour({ ...newTour, year: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Fecha de Llegada</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={newTour.arrivalDate}
+                    onChange={(e) => setNewTour({ ...newTour, arrivalDate: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Fecha de Salida</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={newTour.departureDate}
+                    onChange={(e) => setNewTour({ ...newTour, departureDate: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Información del Aeropuerto</Label>
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Nombre del aeropuerto"
+                    value={newTour.airport?.name}
+                    onChange={(e) => setNewTour({ 
+                      ...newTour, 
+                      airport: { ...newTour.airport!, name: e.target.value } 
+                    })}
+                  />
+                  <Input
+                    placeholder="Código (Ej: MID)"
+                    value={newTour.airport?.code}
+                    onChange={(e) => setNewTour({ 
+                      ...newTour, 
+                      airport: { ...newTour.airport!, code: e.target.value.toUpperCase() } 
+                    })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Compañía (separados por coma)</Label>
+                <Input
+                  placeholder="family, partner, friends"
+                  value={newTour.compania?.join(', ')}
+                  onChange={(e) => setNewTour({ 
+                    ...newTour, 
+                    compania: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Destino (separados por coma)</Label>
+                <Input
+                  placeholder="beach, nature, city"
+                  value={newTour.destino?.join(', ')}
+                  onChange={(e) => setNewTour({ 
+                    ...newTour, 
+                    destino: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Plan (separados por coma)</Label>
+                <Input
+                  placeholder="adventure, relaxation, cultural"
+                  value={newTour.plan?.join(', ')}
+                  onChange={(e) => setNewTour({ 
+                    ...newTour, 
+                    plan: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Especial (separados por coma)</Label>
+                <Input
+                  placeholder="none, traveling with kids, elderly"
+                  value={newTour.especial?.join(', ')}
+                  onChange={(e) => setNewTour({ 
+                    ...newTour, 
+                    especial: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddingTour(false)}>
+                Cancelar
+              </Button>
+              <Button variant="warm" onClick={handleCreateTour} disabled={loading}>
+                {loading ? 'Creando...' : 'Crear Tour'}
               </Button>
             </DialogFooter>
           </DialogContent>
